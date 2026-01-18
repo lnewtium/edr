@@ -31,6 +31,9 @@ fn train_open(conn: &Connection, event: &RustOpenEvent) -> rusqlite::Result<()> 
 }
 
 fn train_bind(conn: &Connection, event: &RustBindEvent) -> rusqlite::Result<()> {
+    if is_zero_ip(&event.ip) {
+        return Ok(());
+    }
     let identity = match resolve_identity(conn, event.pid) {
         Some(b) => b,
         None => return Ok(()),
@@ -41,6 +44,9 @@ fn train_bind(conn: &Connection, event: &RustBindEvent) -> rusqlite::Result<()> 
 }
 
 fn train_connect(conn: &Connection, event: &RustConnectEvent) -> rusqlite::Result<()> {
+    if is_zero_ip(&event.ip) {
+        return Ok(());
+    }
     let identity = match resolve_identity(conn, event.pid) {
         Some(b) => b,
         None => return Ok(()),
@@ -52,4 +58,8 @@ fn train_connect(conn: &Connection, event: &RustConnectEvent) -> rusqlite::Resul
 
 fn format_ip(ip: &[u8; 16]) -> String {
     format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3])
+}
+
+fn is_zero_ip(ip: &[u8; 16]) -> bool {
+    ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0
 }
