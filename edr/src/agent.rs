@@ -3,7 +3,7 @@ use crate::syscalls::select_program_count;
 use rusqlite::Connection;
 use crate::event::{RustEvent, RustExecEvent, RustOpenEvent, RustBindEvent, RustConnectEvent};
 
-const ALERT_API_URL: &str = "http://localhost:3000/event/w_x_warn";
+const ALERT_API_URL: &str = "http://localhost:3000/api/events";
 static mut SUSPECIOUS_EVENT_COUNTER: u32 = 0;
 
 pub fn agent(conn: &Connection, event: &RustEvent) -> rusqlite::Result<()> {
@@ -75,25 +75,36 @@ fn format_ip(ip: &[u8; 16]) -> String {
 
 fn send_alert(syscall: &str, pid: u32, filename: &str, args: &Vec<String>) {
     unsafe { SUSPECIOUS_EVENT_COUNTER += 1; }
-    let client = reqwest::blocking::Client::new();
+    if unsafe { SUSPECIOUS_EVENT_COUNTER < 10 } {
+        println!("Suspecious event counter exceeded threshold, not sending alert.");
+        return;
+    }
+
+    let syscall = syscall.to_string();
+    let filename = filename.to_string();
+    let args = args.clone();
+
     let payload = serde_json::json!({
         "pid": pid,
-        "filename": filename,
-        "syscall": syscall,
-        "args": args,
+        "filename": &filename,
+        "syscall": &syscall,
+        "args": &args,
         "suspecious_event_count": unsafe { SUSPECIOUS_EVENT_COUNTER },
     });
-    let resp = client.post(ALERT_API_URL).json(&payload).send();
-    match resp {
-        Ok(response) => {
-            if response.status().is_success() {
-                println!("Alert sent successfully for PID {} ({})", pid, syscall);
-            } else {
-                println!("Failed to send alert for PID {}: HTTP {}", pid, response.status());
+
+    tokio::spawn(async move {
+        let client = reqwest::Client::new();
+        match client.post(ALERT_API_URL).json(&payload).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    println!("Alert sent successfully for PID {} ({})", pid, &syscall);
+                } else {
+                    println!("Failed to send alert for PID {}: HTTP {}", pid, response.status());
+                }
+            }
+            Err(e) => {
+                println!("Error sending alert for PID {}: {}", pid, e);
             }
         }
-        Err(e) => {
-            println!("Error sending alert for PID {}: {}", pid, e);
-        }
-    }
+    });
 }
